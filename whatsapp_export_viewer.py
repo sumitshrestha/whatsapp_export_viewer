@@ -86,7 +86,7 @@ def parse_chat_streaming(chat_path, chat_dir):
 
                 if attached_match:
                     raw_group = attached_match.group(1)
-                    fn_search = re.search(r'([^\s"\'=<>]+?\.(?:jpg|jpeg|png|gif|mp4|mov|3gp|mp3|opus|aac|wav))',
+                    fn_search = re.search(r'([^\s"\'=<>]+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|3gp|mp3|opus|aac|wav))',
                                           raw_group, flags=re.I)
                     if fn_search:
                         fname = fn_search.group(1).strip().strip('"').strip("'")
@@ -115,7 +115,7 @@ def parse_chat_streaming(chat_path, chat_dir):
                         for root, _, files in os.walk(chat_dir):
                             for f in files:
                                 ext = os.path.splitext(f)[1].lower()
-                                if ext in ('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.3gp', '.mov', '.mp3', '.opus',
+                                if ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.3gp', '.mov', '.mp3', '.opus',
                                            '.aac', '.wav'):
                                     media_candidate = os.path.relpath(os.path.join(root, f), chat_dir)
                                     media_rel_path = urllib.parse.quote(media_candidate.replace(os.sep, '/'))
@@ -214,7 +214,7 @@ def render_message_html_with_highlight(messages, query):
         if msg.get('is_media') and msg.get('media_path'):
             ext = os.path.splitext(msg['media_path'])[1].lower()
             src = '/exports/' + msg['media_path']
-            if ext in ('.jpg', '.jpeg', '.png', '.gif'):
+            if ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
                 out += f'<img src="{src}" class="media" alt="Media">'
             elif ext in ('.mp4', '.mov', '.3gp'):
                 out += f'<video controls class="media"><source src="{src}" type="video/mp4">Video</video>'
@@ -616,6 +616,8 @@ class Handler(BaseHTTPRequestHandler):
                 ct = 'image/png'
             elif ext == '.gif':
                 ct = 'image/gif'
+            elif ext == '.webp':
+                ct = 'image/webp'
             elif ext in ('.mp4', '.mov', '.3gp'):
                 ct = 'video/mp4'
             elif ext in ('.mp3', '.opus'):
