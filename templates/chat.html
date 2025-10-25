@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{display_name}</title>
-    <style>
+        <script>
+            // Server-provided config - must be defined before loading chat.js
+            window.config = {js_config};
+        </script>
+        <script src="/static/chat.js" defer></script>
+        <style>
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; 
             background-color: #121b22; 
@@ -26,6 +31,9 @@
             max-width: 800px; 
             margin: 0 auto; 
             padding: 12px; 
+            /* Make the chat area scrollable so JS can detect scroll events on it */
+            height: calc(100vh - 68px); /* leave room for the header */
+            overflow-y: auto;
         }
         .message { 
             display: flex; 
@@ -135,170 +143,6 @@
     </div>
     <div class="pagination" id="pagination"></div>
 
-    <script>
-        // Server-provided config
-        const chatConfig = {js_config};
-        const chatName = chatConfig.chatName;
-        const totalMessages = chatConfig.totalMessages;
-        let batchSize = chatConfig.batchSize;
-        let loadedPages = new Set();
-        let lastLoadedPage = chatConfig.currentPage;
-        let totalLoadedMessages = 0;
-        let isLoading = false;
-        const currentPage = chatConfig.currentPage;
-        const searchQuery = chatConfig.searchQuery;
-        const encodedFile = chatConfig.encodedFile;
-
-        // Initialize myName from localStorage (if set for this file)
-        let myName = localStorage.getItem('whatsapp_my_name_' + encodedFile) || '';
-        if (myName) {
-            const sel = document.getElementById('my-name');
-            try { sel.value = myName; } catch (e) {}
-        }
-
-        function loadPage(page, query = '', scrollToIndex = null, mode = 'replace') {
-            // allow 'replace' loads even if we've loaded this page before (useful for searching / batch-size changes)
-            if (isLoading) return;
-            if (mode !== 'replace' && loadedPages.has(page)) return;
-            isLoading = true;
-
-            const container = document.getElementById('chat-container');
-            batchSize = parseInt(document.getElementById('batch-size')?.value || chatConfig.batchSize, 10);
-            const url = '/api/messages?page=' + page + '&query=' + encodeURIComponent(query) + '&file=' + encodedFile + '&batch_size=' + batchSize;
-
-            fetch(url)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.error) {
-                        if (mode === 'replace') container.innerHTML = '<div class="system">Error: ' + data.error + '</div>';
-                        isLoading = false;
-                        return;
-                    }
-
-                    if (mode === 'replace') {
-                        container.innerHTML = data.html;
-                        loadedPages = new Set([page]);
-                        totalLoadedMessages = data.total_matches || 0;
-                    } else if (mode === 'append') {
-                        container.insertAdjacentHTML('beforeend', data.html);
-                        loadedPages.add(page);
-                        totalLoadedMessages += (data.html ? batchSize : 0);
-                    } else if (mode === 'prepend') {
-                        container.insertAdjacentHTML('afterbegin', data.html);
-                        loadedPages.add(page);
-                        totalLoadedMessages += (data.html ? batchSize : 0);
-                    }
-
-                    renderPagination(page, data.total_matches || 0);
-                    populateSenderDropdown(data.senders || []);
-                    applyMessageAlignment();
-                    isLoading = false;
-
-                    if (scrollToIndex !== null && scrollToIndex !== undefined) {
-                        setTimeout(() => {
-                            const el = document.getElementById('msg-' + scrollToIndex);
-                            if (el) {
-                                try { el.scrollIntoView({behavior: 'smooth', block: 'center'}); } catch (e) { el.scrollIntoView(); }
-                                el.classList.add('flash');
-                                setTimeout(() => el.classList.remove('flash'), 1800);
-                            }
-                        }, 60);
-                    }
-                })
-                .catch(err => {
-                    try { container.innerHTML = '<div class="system">Failed to load.</div>'; } catch (e) {}
-                    isLoading = false;
-                });
-        }
-
-        function renderPagination(page, totalMatches) {
-            const totalPages = Math.max(1, Math.ceil(totalMatches / batchSize));
-            let html = '';
-            if (page > 0) {
-                html += '<button onclick="loadPage(' + (page - 1) + ', document.getElementById(\'search-box\').value)">← Prev</button>';
-            }
-            html += 'Page ' + (page + 1) + ' of ' + totalPages + ' (' + totalMatches + ' matches)';
-            if (page < totalPages - 1) {
-                html += '<button onclick="loadPage(' + (page + 1) + ', document.getElementById(\'search-box\').value)">Next →</button>';
-            }
-            document.getElementById('pagination').innerHTML = html;
-        }
-
-        function populateSenderDropdown(senders) {
-            const select = document.getElementById('my-name');
-            // Populate only if not already populated (keep the initial placeholder)
-            if (select.options.length <= 1) {
-                senders.forEach(name => {
-                    const opt = document.createElement('option');
-                    opt.value = name;
-                    opt.textContent = name;
-                    if (name === myName) opt.selected = true;
-                    select.appendChild(opt);
-                });
-            }
-        }
-
-        function applyMessageAlignment() {
-            myName = document.getElementById('my-name').value;
-            try { localStorage.setItem('whatsapp_my_name_' + encodedFile, myName); } catch (e) {}
-
-            document.querySelectorAll('.message').forEach(msgDiv => {
-                const senderElem = msgDiv.querySelector('.sender');
-                const senderName = senderElem ? senderElem.textContent : null;
-                msgDiv.classList.remove('sent', 'received');
-                if (myName && senderName === myName) {
-                    msgDiv.classList.add('sent');
-                } else {
-                    msgDiv.classList.add('received');
-                }
-            });
-        }
-
-        function goToMessage(globalIndex) {
-            if (typeof globalIndex === 'undefined' || globalIndex === null) return;
-            const pageToLoad = Math.floor(globalIndex / batchSize);
-            const queryVal = document.getElementById('search-box').value || '';
-            loadPage(pageToLoad, queryVal, globalIndex);
-        }
-
-        function handleJump() {
-            const val = document.getElementById('jump-box').value.trim();
-            if (!val) return;
-            if (/^\d+$/.test(val)) {
-                const idx = parseInt(val, 10) - 1;
-                if (isNaN(idx) || idx < 0) return;
-                goToMessage(idx);
-                return;
-            }
-
-            const q = val;
-            fetch('/api/find?file=' + encodedFile + '&q=' + encodeURIComponent(q))
-                .then(r => r.json())
-                .then(data => {
-                    if (data && typeof data.index === 'number' && data.index >= 0) {
-                        goToMessage(data.index);
-                    } else {
-                        alert('No matching message found');
-                    }
-                })
-                .catch(() => alert('Failed to search'));
-        }
-
-        // Attach listeners
-        document.getElementById('my-name').addEventListener('change', applyMessageAlignment);
-        document.getElementById('jump-box').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); handleJump(); } });
-        document.getElementById('batch-size').addEventListener('change', () => { loadPage(0, document.getElementById('search-box').value); });
-
-        let searchTimeout;
-        document.getElementById('search-box').addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                loadPage(0, e.target.value);
-            }, 300);
-        });
-
-        // initial load
-        loadPage(currentPage, searchQuery);
-    </script>
+    <!-- chat.js loaded in <head> reads window.config; UI logic lives in static/chat.js -->
 </body>
 </html>

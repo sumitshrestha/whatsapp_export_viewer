@@ -564,6 +564,23 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
 
+        elif path.startswith('/static/'):
+            rel_path = urllib.parse.unquote(path[len('/static/'):])
+            serve_path = os.path.join(BASE_DIR, 'static', rel_path)
+            if os.path.exists(serve_path):
+                self.send_response(200)
+                if serve_path.endswith('.js'):
+                    self.send_header('Content-type', 'application/javascript')
+                elif serve_path.endswith('.css'):
+                    self.send_header('Content-type', 'text/css')
+                self.end_headers()
+                with open(serve_path, 'rb') as f:
+                    self.wfile.write(f.read())
+                return
+            else:
+                self.send_error(404)
+                return
+
         elif path.startswith('/exports/'):
             rel_path = urllib.parse.unquote(path[len('/exports/'):])
 
