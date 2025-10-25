@@ -166,13 +166,13 @@ def extract_and_parse(zip_path):
         if cached is not None:
             return cached
 
-        extract_dir = os.path.join(CACHE_DIR, 'tmp_extract')
-        if os.path.exists(extract_dir):
-            try:
-                shutil.rmtree(extract_dir)
-            except Exception:
-                pass
-        os.makedirs(extract_dir, exist_ok=True)
+        # Create a unique extraction directory for each zip using its hash
+        zip_hash = compute_file_hash(zip_path)
+        extract_dir = os.path.join(CACHE_DIR, f'extract_{zip_hash}')
+        
+        # Only extract if not already extracted
+        if not os.path.exists(extract_dir):
+            os.makedirs(extract_dir, exist_ok=True)
 
         with zipfile.ZipFile(zip_path, 'r') as zf:
             zf.extractall(extract_dir)
@@ -616,12 +616,35 @@ class Handler(BaseHTTPRequestHandler):
 # Main Entry Point
 # ----------------------------
 
+def cleanup_old_extractions(max_age_days=7):
+    """Clean up extraction directories older than max_age_days"""
+    current_time = datetime.now()
+    try:
+        for item in os.listdir(CACHE_DIR):
+            if item.startswith('extract_'):
+                item_path = os.path.join(CACHE_DIR, item)
+                if os.path.isdir(item_path):
+                    # Check the directory's last modification time
+                    mtime = datetime.fromtimestamp(os.path.getmtime(item_path))
+                    age_days = (current_time - mtime).days
+                    if age_days > max_age_days:
+                        try:
+                            shutil.rmtree(item_path)
+                        except Exception:
+                            pass
+    except Exception:
+        pass  # Ignore cleanup errors
+
 def main():
     port = 8000
     server = HTTPServer(('localhost', port), Handler)
     url = f'http://localhost:{port}'
     print(f"✅ WhatsApp Viewer running at {url}")
     print(f"📁 Place your WhatsApp .zip exports in: {os.path.abspath(EXPORTS_DIR)}")
+    
+    # Clean up old extracted files on startup
+    cleanup_old_extractions()
+    
     webbrowser.open(url)
 
     try:
