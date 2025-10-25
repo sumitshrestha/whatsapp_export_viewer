@@ -308,218 +308,6 @@ def render_chat_page(display_name, zip_filename, total_messages, current_page, s
 
 class Handler(BaseHTTPRequestHandler):
     def add_cors_headers(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.add_cors_headers()
-        self.end_headers()
-
-    def do_GET(self):
-        url = urlparse(self.path)
-        path = url.path
-        query = parse_qs(url.query)
-
-        if path == '/':
-            zip_files = get_zip_files()
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            self.wfile.write(render_file_selector(zip_files).encode('utf-8'))
-
-        elif path == '/view':
-            file_name = query.get('file', [None])[0]
-            if not file_name:
-                self.send_error(400, 'No file selected')
-                return
-
-            try:
-                file_name = urllib.parse.unquote(file_name)
-                zip_path = os.path.join(EXPORTS_DIR, file_name)
-                if not os.path.exists(zip_path):
-                    self.send_error(404, 'File not found')
-                    return
-
-                messages = extract_and_parse(zip_path)
-                total = len(messages)
-                display_name = os.path.splitext(file_name)[0].replace('_', ' ')
-                page = int(query.get('page', [0])[0])
-                search_query = query.get('q', [''])[0]
-
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                self.wfile.write(render_chat_page(display_name, file_name, total, page, search_query).encode('utf-8'))
-            except Exception as e:
-                self.send_error(500, str(e))
-
-        elif path == '/api/messages':
-            file_name = query.get('file', [None])[0]
-            if not file_name:
-                self.send_error(400, 'No file')
-                return
-
-            try:
-                file_name = urllib.parse.unquote(file_name)
-                zip_path = os.path.join(EXPORTS_DIR, file_name)
-                messages = extract_and_parse(zip_path)
-
-                page = int(query.get('page', [0])[0])
-                search_query = query.get('query', [''])[0]
-                batch_size = int(query.get('batch_size', [BATCH_SIZE])[0])
-
-                all_senders = set()
-                for msg in messages:
-                    if not msg.get('is_system', False):
-                        all_senders.add(msg['sender'])
-                senders_list = sorted(all_senders)
-
-                if search_query.strip():
-                    qc = search_query.strip()
-                    match_indices = [i for i, m in enumerate(messages) if
-                                     qc.lower() in (m.get('text', '') + ' ' + m.get('sender', '')).lower()]
-                    context_indices = set()
-                    for i in match_indices:
-                        for j in range(max(0, i - 2), min(len(messages), i + 3)):
-                            context_indices.add(j)
-                    context_indices = sorted(context_indices)
-
-                    enriched = []
-                    for idx in context_indices:
-                        msg = messages[idx].copy()
-                        msg['_is_match'] = (idx in match_indices)
-                        msg['_index'] = idx
-                        enriched.append(msg)
-
-                    total_matches = len(match_indices)
-                    start = page * batch_size
-                    end = start + batch_size
-                    batch = enriched[start:end]
-                    html_out = render_message_html_with_highlight(batch, qc)
-                else:
-                    total_matches = len(messages)
-                    start = page * batch_size
-                    end = start + batch_size
-                    batch = []
-                    for i in range(start, min(end, len(messages))):
-                        m = messages[i].copy()
-                        m['_index'] = i
-                        batch.append(m)
-                    html_out = render_message_html_with_highlight(batch, '')
-
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(
-                    json.dumps({'html': html_out, 'total_matches': total_matches, 'senders': senders_list}).encode(
-                        'utf-8'))
-            except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
-
-        elif path == '/api/find':
-            file_name = query.get('file', [None])[0]
-            q = query.get('q', [''])[0]
-            if not file_name:
-                self.send_response(400)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': 'No file'}).encode('utf-8'))
-                return
-            try:
-                file_name = urllib.parse.unquote(file_name)
-                zip_path = os.path.join(EXPORTS_DIR, file_name)
-                messages = extract_and_parse(zip_path)
-                q_clean = q.strip().lower()
-                found = -1
-                if q_clean:
-                    for i, msg in enumerate(messages):
-                        text_content = (msg.get('text', '') + ' ' + msg.get('sender', '')).lower()
-                        if q_clean in text_content:
-                            found = i
-                            break
-
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'index': found}).encode('utf-8'))
-            except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
-
-        elif path.startswith('/exports/'):
-            rel_path = urllib.parse.unquote(path[len('/exports/'):])
-            candidate = os.path.join(EXPORTS_DIR, rel_path)
-            if os.path.exists(candidate):
-                serve_path = candidate
-            else:
-                serve_path = None
-                for root, _, files in os.walk(CACHE_DIR):
-                    for f in files:
-                        full = os.path.join(root, f)
-                        rel = os.path.relpath(full, CACHE_DIR).replace('\\', '/')
-                        if rel.endswith(rel_path) or os.path.basename(full) == os.path.basename(rel_path):
-                            serve_path = full
-                            break
-                    if serve_path:
-                        break
-
-            if not serve_path or not os.path.exists(serve_path):
-                self.send_error(404)
-                return
-
-            self.send_response(200)
-            ext = os.path.splitext(serve_path)[1].lower()
-            ct = 'application/octet-stream'
-            if ext in ('.jpg', '.jpeg'):
-                ct = 'image/jpeg'
-            elif ext == '.png':
-                ct = 'image/png'
-            elif ext == '.gif':
-                ct = 'image/gif'
-            elif ext in ('.mp4', '.mov', '.3gp'):
-                ct = 'video/mp4'
-            elif ext in ('.mp3', '.opus'):
-                ct = 'audio/mpeg'
-            self.send_header('Content-type', ct)
-            self.end_headers()
-            with open(serve_path, 'rb') as f:
-                self.wfile.write(f.read())
-
-        else:
-            self.send_error(404)
-
-
-def main():
-    port = 8000
-    server = HTTPServer(('localhost', port), Handler)
-    url = f'http://localhost:{port}'
-    print(f"✅ WhatsApp Viewer running at {url}")
-    print(f"📁 Place your WhatsApp .zip exports in: {os.path.abspath(EXPORTS_DIR)}")
-    webbrowser.open(url)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print('\nShutting down...')
-        server.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-
-
-# ----------------------------
-# HTTP Handler
-# ----------------------------
-
-class Handler(BaseHTTPRequestHandler):
-    def add_cors_headers(self):
         """Add CORS headers for the debug endpoint to work from dev tools"""
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -825,7 +613,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 # ----------------------------
-# Main
+# Main Entry Point
 # ----------------------------
 
 def main():
@@ -834,13 +622,17 @@ def main():
     url = f'http://localhost:{port}'
     print(f"✅ WhatsApp Viewer running at {url}")
     print(f"📁 Place your WhatsApp .zip exports in: {os.path.abspath(EXPORTS_DIR)}")
-    # webbrowser.open(url)
+    webbrowser.open(url)
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down...")
         server.shutdown()
-
+        server.server_close()  # Ensure proper cleanup
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass  # Handle Ctrl+C gracefully at the top level
