@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{display_name}</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; 
+            background-color: #121b22; 
+            color: #e6e6e6; 
+            margin: 0; 
+            padding: 0; 
+        }
+        .header { 
+            background-color: #1f2c34; 
+            padding: 12px 16px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            position: sticky; 
+            top: 0; 
+            z-index: 100; 
+        }
+        .chat-container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 12px; 
+        }
+        .message { 
+            display: flex; 
+            margin-bottom: 8px; 
+        }
+        .message.received { flex-direction: row; }
+        .message.sent { flex-direction: row-reverse; }
+        .bubble { 
+            padding: 10px 12px; 
+            border-radius: 7.5px; 
+            max-width: 65%; 
+            word-wrap: break-word; 
+            font-size: 16px; 
+        }
+        .received .bubble { 
+            background-color: #202c33; 
+            color: #e6e6e6; 
+            border-top-left-radius: 0; 
+        }
+        .sent .bubble { 
+            background-color: #005c4b; 
+            color: white; 
+            border-top-right-radius: 0; 
+        }
+        .sender { 
+            font-size: 13px; 
+            font-weight: bold; 
+            color: #8c99a2; 
+            margin-bottom: 3px; 
+        }
+        .timestamp { 
+            font-size: 11px; 
+            color: #78828a; 
+            text-align: right; 
+            margin-top: 4px; 
+        }
+        .media { 
+            max-width: 100%; 
+            border-radius: 8px; 
+            display: block; 
+            margin-top: 4px; 
+        }
+        .system { 
+            text-align: center; 
+            color: #8c99a2; 
+            font-style: italic; 
+            margin: 12px 0; 
+            background: rgba(0,0,0,0.2); 
+            padding: 6px 12px; 
+            border-radius: 8px; 
+        }
+        .back-home-btn { 
+            background-color: #34414a; 
+            color: #fff; 
+            border: none; 
+            padding: 6px 14px; 
+            border-radius: 4px; 
+            font-size: 15px; 
+            cursor: pointer; 
+            margin-right: 12px; 
+        }
+        #search-box, #my-name, #jump-box, #batch-size { 
+            padding: 4px; 
+            background-color: #202c33; 
+            border: 1px solid #34414a; 
+            color: white; 
+            border-radius: 4px; 
+            font-size: 13px; 
+        }
+        .loading { 
+            text-align: center; 
+            padding: 20px; 
+            color: #78828a; 
+        }
+        .pagination { 
+            text-align: center; 
+            padding: 12px; 
+            background-color: #1f2c34; 
+        }
+        .pagination button { 
+            background-color: #005c4b; 
+            color: white; 
+            border: none; 
+            padding: 6px 12px; 
+            margin: 0 4px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-home-btn" onclick="window.location.href='/'">← Home</button>
+        <strong>{display_name}</strong>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <label for="my-name" style="font-size:13px;color:#8c99a2;">Me:</label>
+            <select id="my-name"><option value="">Select your name...</option></select>
+            <input type="text" id="search-box" placeholder="Search messages..." value="{search_query}">
+            <input type="text" id="jump-box" placeholder="Jump to # or text" style="width:180px">
+            <button onclick="handleJump()" style="background-color:#00a884;border:none;color:#04211e;padding:6px 8px;border-radius:4px;cursor:pointer;font-weight:600">Go</button>
+            <label for="batch-size" style="font-size:13px;color:#8c99a2;">Batch size:</label>
+            <input type="number" id="batch-size" min="1" max="500" value="{batch_size}" style="width:70px">
+        </div>
+    </div>
+    <div class="chat-container" id="chat-container">
+        <div class="loading">Loading messages...</div>
+    </div>
+    <div class="pagination" id="pagination"></div>
+
+    <script>
+        // Server-provided config
+        const chatConfig = {js_config};
+        const chatName = chatConfig.chatName;
+        const totalMessages = chatConfig.totalMessages;
+        let batchSize = chatConfig.batchSize;
+        let loadedPages = new Set();
+        let lastLoadedPage = chatConfig.currentPage;
+        let totalLoadedMessages = 0;
+        let isLoading = false;
+        const currentPage = chatConfig.currentPage;
+        const searchQuery = chatConfig.searchQuery;
+        const encodedFile = chatConfig.encodedFile;
+
+        // Initialize myName from localStorage (if set for this file)
+        let myName = localStorage.getItem('whatsapp_my_name_' + encodedFile) || '';
+        if (myName) {
+            const sel = document.getElementById('my-name');
+            try { sel.value = myName; } catch (e) {}
+        }
+
+        function loadPage(page, query = '', scrollToIndex = null, mode = 'replace') {
+            // allow 'replace' loads even if we've loaded this page before (useful for searching / batch-size changes)
+            if (isLoading) return;
+            if (mode !== 'replace' && loadedPages.has(page)) return;
+            isLoading = true;
+
+            const container = document.getElementById('chat-container');
+            batchSize = parseInt(document.getElementById('batch-size')?.value || chatConfig.batchSize, 10);
+            const url = '/api/messages?page=' + page + '&query=' + encodeURIComponent(query) + '&file=' + encodedFile + '&batch_size=' + batchSize;
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        if (mode === 'replace') container.innerHTML = '<div class="system">Error: ' + data.error + '</div>';
+                        isLoading = false;
+                        return;
+                    }
+
+                    if (mode === 'replace') {
+                        container.innerHTML = data.html;
+                        loadedPages = new Set([page]);
+                        totalLoadedMessages = data.total_matches || 0;
+                    } else if (mode === 'append') {
+                        container.insertAdjacentHTML('beforeend', data.html);
+                        loadedPages.add(page);
+                        totalLoadedMessages += (data.html ? batchSize : 0);
+                    } else if (mode === 'prepend') {
+                        container.insertAdjacentHTML('afterbegin', data.html);
+                        loadedPages.add(page);
+                        totalLoadedMessages += (data.html ? batchSize : 0);
+                    }
+
+                    renderPagination(page, data.total_matches || 0);
+                    populateSenderDropdown(data.senders || []);
+                    applyMessageAlignment();
+                    isLoading = false;
+
+                    if (scrollToIndex !== null && scrollToIndex !== undefined) {
+                        setTimeout(() => {
+                            const el = document.getElementById('msg-' + scrollToIndex);
+                            if (el) {
+                                try { el.scrollIntoView({behavior: 'smooth', block: 'center'}); } catch (e) { el.scrollIntoView(); }
+                                el.classList.add('flash');
+                                setTimeout(() => el.classList.remove('flash'), 1800);
+                            }
+                        }, 60);
+                    }
+                })
+                .catch(err => {
+                    try { container.innerHTML = '<div class="system">Failed to load.</div>'; } catch (e) {}
+                    isLoading = false;
+                });
+        }
+
+        function renderPagination(page, totalMatches) {
+            const totalPages = Math.max(1, Math.ceil(totalMatches / batchSize));
+            let html = '';
+            if (page > 0) {
+                html += '<button onclick="loadPage(' + (page - 1) + ', document.getElementById(\'search-box\').value)">← Prev</button>';
+            }
+            html += 'Page ' + (page + 1) + ' of ' + totalPages + ' (' + totalMatches + ' matches)';
+            if (page < totalPages - 1) {
+                html += '<button onclick="loadPage(' + (page + 1) + ', document.getElementById(\'search-box\').value)">Next →</button>';
+            }
+            document.getElementById('pagination').innerHTML = html;
+        }
+
+        function populateSenderDropdown(senders) {
+            const select = document.getElementById('my-name');
+            // Populate only if not already populated (keep the initial placeholder)
+            if (select.options.length <= 1) {
+                senders.forEach(name => {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    if (name === myName) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            }
+        }
+
+        function applyMessageAlignment() {
+            myName = document.getElementById('my-name').value;
+            try { localStorage.setItem('whatsapp_my_name_' + encodedFile, myName); } catch (e) {}
+
+            document.querySelectorAll('.message').forEach(msgDiv => {
+                const senderElem = msgDiv.querySelector('.sender');
+                const senderName = senderElem ? senderElem.textContent : null;
+                msgDiv.classList.remove('sent', 'received');
+                if (myName && senderName === myName) {
+                    msgDiv.classList.add('sent');
+                } else {
+                    msgDiv.classList.add('received');
+                }
+            });
+        }
+
+        function goToMessage(globalIndex) {
+            if (typeof globalIndex === 'undefined' || globalIndex === null) return;
+            const pageToLoad = Math.floor(globalIndex / batchSize);
+            const queryVal = document.getElementById('search-box').value || '';
+            loadPage(pageToLoad, queryVal, globalIndex);
+        }
+
+        function handleJump() {
+            const val = document.getElementById('jump-box').value.trim();
+            if (!val) return;
+            if (/^\d+$/.test(val)) {
+                const idx = parseInt(val, 10) - 1;
+                if (isNaN(idx) || idx < 0) return;
+                goToMessage(idx);
+                return;
+            }
+
+            const q = val;
+            fetch('/api/find?file=' + encodedFile + '&q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(data => {
+                    if (data && typeof data.index === 'number' && data.index >= 0) {
+                        goToMessage(data.index);
+                    } else {
+                        alert('No matching message found');
+                    }
+                })
+                .catch(() => alert('Failed to search'));
+        }
+
+        // Attach listeners
+        document.getElementById('my-name').addEventListener('change', applyMessageAlignment);
+        document.getElementById('jump-box').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); handleJump(); } });
+        document.getElementById('batch-size').addEventListener('change', () => { loadPage(0, document.getElementById('search-box').value); });
+
+        let searchTimeout;
+        document.getElementById('search-box').addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                loadPage(0, e.target.value);
+            }, 300);
+        });
+
+        // initial load
+        loadPage(currentPage, searchQuery);
+    </script>
+</body>
+</html>
