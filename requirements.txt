@@ -1,0 +1,12 @@
+# WhatsApp Export Viewer
+# This project uses only Python standard library modules:
+# - http.server for the web server
+# - json for parsing/serializing
+# - hashlib for file hashing
+# - html for escaping
+# - pathlib for path handling
+# - shutil for file operations
+# - zipfile for reading exports
+
+# Minimum Python version required
+python>=3.6

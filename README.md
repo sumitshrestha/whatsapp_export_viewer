@@ -7,7 +7,9 @@ Lightweight local viewer for WhatsApp exported ZIP archives. Run the simple buil
 - Parse WhatsApp exported `.zip` archives (the chat `.txt` and attached media).
 - Serve a small web UI (plain Python stdlib HTTPServer) at `http://localhost:8000`.
 - Search messages, view message context, and serve extracted media files.
-- No external web framework required.
+- Infinite scroll with dynamic loading of message batches.
+- Per-ZIP extraction caching for fast switching between chats.
+- No external web framework required - pure Python standard library.
 
 ## Repository layout
 
@@ -22,9 +24,16 @@ Lightweight local viewer for WhatsApp exported ZIP archives. Run the simple buil
 
 ## Prerequisites
 
-- Python 3.8+ (the project uses only the standard library; no external packages required).
+- Python 3.6+ (the project uses only the standard library; no external packages required)
+- Web browser with JavaScript enabled
+- WhatsApp chat export ZIP file(s)
 
-Optional: create a virtual environment for isolation.
+A virtual environment is recommended for isolation but not required:
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1  # on Windows
+source .venv/bin/activate     # on Linux/MacOS
+```
 
 ## Quick start (Windows PowerShell)
 
@@ -53,9 +62,15 @@ Usage notes:
 
 ## Development / Next steps
 
-- Add a small `requirements.txt` if you introduce external packages.
-- Add a CLI flag to change host/port or disable auto-open.
-- Add unit tests for parsing edge cases (timestamps, multiline messages, media markers).
+- Add CLI flags for:
+  - Custom host/port binding
+  - Disable browser auto-open
+  - Control cache cleanup age
+- Add unit tests for parsing edge cases (timestamps, multiline messages, media markers)
+- Add loading indicators during batch loads
+- Add favicon to prevent 404 on browser requests
+
+The project intentionally uses only Python standard library modules. See `requirements.txt` for the minimum Python version and list of stdlib modules used.
 
 ## License
 
@@ -63,7 +78,17 @@ Choose a license for your project (e.g., MIT). This repository currently has no 
 
 ---
 
-If you'd like, I can also:
-- add a `requirements.txt` or `pyproject.toml` if you plan to add dependencies,
-- add a short Dockerfile to run the viewer in a container,
-- or add a CONTRIBUTING.md with steps to run tests.
+## Contributing
+
+Key files for development:
+- `whatsapp_export_viewer.py` - Main server & parsing logic
+- `templates/chat.html` - Core template with viewport & controls
+- `static/chat.js` - Client-side logic for infinite scroll & UI
+
+Development tips:
+1. Use browser DevTools Network tab to watch for `/api/messages` requests during infinite scroll
+2. Check browser Console for any JavaScript errors
+3. Kill the server with Ctrl+C - it will clean up properly
+4. The `.cache/` folder is safe to delete - it will be rebuilt on next run
+
+Feel free to submit pull requests for any improvements!
