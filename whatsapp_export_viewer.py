@@ -1,4 +1,5 @@
 import hashlib
+import html
 import json
 import os
 import re
@@ -6,7 +7,6 @@ import shutil
 import urllib.parse
 import webbrowser
 import zipfile
-import html
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -86,7 +86,8 @@ def parse_chat_streaming(chat_path, chat_dir):
 
                 if attached_match:
                     raw_group = attached_match.group(1)
-                    fn_search = re.search(r'([^\s"\'=<>]+?\.(?:jpg|jpeg|png|gif|mp4|mov|3gp|mp3|opus|aac|wav))', raw_group, flags=re.I)
+                    fn_search = re.search(r'([^\s"\'=<>]+?\.(?:jpg|jpeg|png|gif|mp4|mov|3gp|mp3|opus|aac|wav))',
+                                          raw_group, flags=re.I)
                     if fn_search:
                         fname = fn_search.group(1).strip().strip('"').strip("'")
                     else:
@@ -95,7 +96,8 @@ def parse_chat_streaming(chat_path, chat_dir):
 
                     for root, _, files in os.walk(chat_dir):
                         for f in files:
-                            if f.lower() == os.path.basename(fname).lower() or f.lower().endswith(os.path.basename(fname).lower()):
+                            if f.lower() == os.path.basename(fname).lower() or f.lower().endswith(
+                                    os.path.basename(fname).lower()):
                                 media_candidate = os.path.relpath(os.path.join(root, f), chat_dir)
                                 media_rel_path = urllib.parse.quote(media_candidate.replace(os.sep, '/'))
                                 is_media = True
@@ -107,12 +109,14 @@ def parse_chat_streaming(chat_path, chat_dir):
                     text = re.sub(r'attached:\s*[^\n\r]+', '', text, flags=re.I)
 
                 if not is_media:
-                    if re.search(r'<media omitted>|<Media omitted>|<attached media omitted>', text, flags=re.I) or ('<Media omitted>' in text):
+                    if re.search(r'<media omitted>|<Media omitted>|<attached media omitted>', text, flags=re.I) or (
+                            '<Media omitted>' in text):
                         is_media = True
                         for root, _, files in os.walk(chat_dir):
                             for f in files:
                                 ext = os.path.splitext(f)[1].lower()
-                                if ext in ('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.3gp', '.mov', '.mp3', '.opus', '.aac', '.wav'):
+                                if ext in ('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.3gp', '.mov', '.mp3', '.opus',
+                                           '.aac', '.wav'):
                                     media_candidate = os.path.relpath(os.path.join(root, f), chat_dir)
                                     media_rel_path = urllib.parse.quote(media_candidate.replace(os.sep, '/'))
                                     break
@@ -186,7 +190,9 @@ def highlight_text(text, query):
     if not query or not text:
         return html.escape(text).replace('\n', '<br>')
     escaped = html.escape(text)
-    highlighted = re.sub(f'({re.escape(query)})', r"<mark style=\"background:#005c4b;color:white;padding:0 2px;border-radius:2px;\">\1</mark>", escaped, flags=re.IGNORECASE)
+    highlighted = re.sub(f'({re.escape(query)})',
+                         r"<mark style=\"background:#005c4b;color:white;padding:0 2px;border-radius:2px;\">\1</mark>",
+                         escaped, flags=re.IGNORECASE)
     return highlighted.replace('\n', '<br>')
 
 
@@ -194,7 +200,7 @@ def render_message_html_with_highlight(messages, query):
     out = ''
     for msg in messages:
         if msg.get('is_system'):
-            out += f"<div class=\"system\">{html.escape(msg.get('text',''))}</div>"
+            out += f"<div class=\"system\">{html.escape(msg.get('text', ''))}</div>"
             continue
 
         is_match = msg.get('_is_match', False)
@@ -215,14 +221,14 @@ def render_message_html_with_highlight(messages, query):
             else:
                 out += f'<a href="{src}" style="color:#00a884;">📎 Media</a>'
         else:
-            text_str = msg.get('text','') or ''
+            text_str = msg.get('text', '') or ''
             escaped_html = html.escape(text_str).replace('\n', '<br>')
             out += f'<div class="message-text">{escaped_html}</div>'
             if query:
-                out += highlight_text(msg.get('text',''), query)
+                out += highlight_text(msg.get('text', ''), query)
 
         if msg.get('_is_match'):
-            idx = msg.get('_index','')
+            idx = msg.get('_index', '')
             if idx != '':
                 out += f'<div style="margin-top:6px;font-size:12px;"><a href="#" onclick="goToMessage({idx});return false;" style="color:#00a884;">View in chat</a></div>'
 
@@ -372,10 +378,11 @@ class Handler(BaseHTTPRequestHandler):
 
                 if search_query.strip():
                     qc = search_query.strip()
-                    match_indices = [i for i, m in enumerate(messages) if qc.lower() in (m.get('text','') + ' ' + m.get('sender','')).lower()]
+                    match_indices = [i for i, m in enumerate(messages) if
+                                     qc.lower() in (m.get('text', '') + ' ' + m.get('sender', '')).lower()]
                     context_indices = set()
                     for i in match_indices:
-                        for j in range(max(0, i-2), min(len(messages), i+3)):
+                        for j in range(max(0, i - 2), min(len(messages), i + 3)):
                             context_indices.add(j)
                     context_indices = sorted(context_indices)
 
@@ -405,7 +412,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({'html': html_out, 'total_matches': total_matches, 'senders': senders_list}).encode('utf-8'))
+                self.wfile.write(
+                    json.dumps({'html': html_out, 'total_matches': total_matches, 'senders': senders_list}).encode(
+                        'utf-8'))
             except Exception as e:
                 self.send_response(500)
                 self.send_header('Content-type', 'application/json')
@@ -429,7 +438,7 @@ class Handler(BaseHTTPRequestHandler):
                 found = -1
                 if q_clean:
                     for i, msg in enumerate(messages):
-                        text_content = (msg.get('text','') + ' ' + msg.get('sender','')).lower()
+                        text_content = (msg.get('text', '') + ' ' + msg.get('sender', '')).lower()
                         if q_clean in text_content:
                             found = i
                             break
@@ -503,7 +512,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 
 # ----------------------------
@@ -653,7 +661,7 @@ class Handler(BaseHTTPRequestHandler):
             # Debug endpoint to inspect message parsing
             file_name = query.get('file', [None])[0]
             msg_id = query.get('id', [None])[0]
-            
+
             if not file_name or msg_id is None:
                 self.send_response(400)
                 self.send_header('Content-type', 'application/json')
@@ -661,13 +669,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({'error': 'Missing file or message ID'}).encode('utf-8'))
                 return
-                
+
             try:
                 msg_id = int(msg_id)
                 file_name = urllib.parse.unquote(file_name)
                 zip_path = os.path.join(EXPORTS_DIR, file_name)
                 messages = extract_and_parse(zip_path)
-                
+
                 if msg_id < 0 or msg_id >= len(messages):
                     self.send_response(404)
                     self.send_header('Content-type', 'application/json')
@@ -675,7 +683,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(json.dumps({'error': 'Message not found'}).encode('utf-8'))
                     return
-                    
+
                 msg = messages[msg_id]
                 debug_info = {
                     'message': msg,
@@ -689,20 +697,20 @@ class Handler(BaseHTTPRequestHandler):
                     'parsed_timestamp': msg.get('timestamp', ''),
                     'is_system_message': msg.get('is_system', False)
                 }
-                
+
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.add_cors_headers()
                 self.end_headers()
                 self.wfile.write(json.dumps(debug_info, ensure_ascii=False, indent=2).encode('utf-8'))
-                
+
             except Exception as e:
                 self.send_response(500)
                 self.send_header('Content-type', 'application/json')
                 self.add_cors_headers()
                 self.end_headers()
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
-                
+
         elif path == '/api/find':
             # Find first message index that matches the query (simple contains on text+sender)
             file_name = query.get('file', [None])[0]
@@ -826,7 +834,7 @@ def main():
     url = f'http://localhost:{port}'
     print(f"✅ WhatsApp Viewer running at {url}")
     print(f"📁 Place your WhatsApp .zip exports in: {os.path.abspath(EXPORTS_DIR)}")
-    webbrowser.open(url)
+    # webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
